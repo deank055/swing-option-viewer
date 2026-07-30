@@ -1,1 +1,181 @@
-<h1>Hello world!</h1>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swing option exercise boundary viewer</title>
+<meta name="description" content="Visualise the optimal exercise boundary surface for a swing option on a mean-reverting commodity.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page">
+
+  <header class="site-header">
+    <h1>Swing option exercise boundary</h1>
+    <p class="subtitle">The optimal exercise threshold S*(t, C) for a swing option on a mean-reverting commodity price, as a surface over time and cumulative volume.</p>
+  </header>
+
+  <div id="stub-banner" class="banner" hidden>
+    <strong>Placeholder solver.</strong> The backend is currently returning stub output for illustration, not the production dynamic-programming solve.
+  </div>
+
+  <main>
+    <div class="panels">
+
+      <section class="panel" aria-labelledby="contract-heading">
+        <h2 id="contract-heading">Contract parameters</h2>
+
+        <div class="field">
+          <label for="input-T">Contract horizon T (years)</label>
+          <select id="input-T"></select>
+        </div>
+
+        <div class="field">
+          <label for="input-N">Trading dates (N = round(T &times; 252))</label>
+          <input id="input-N" type="text" readonly tabindex="-1">
+        </div>
+
+        <div class="field slider-field">
+          <label for="input-n_max">Max exercises (n_max)</label>
+          <div class="slider-row">
+            <input id="input-n_max" type="range" step="1">
+            <input id="input-n_max-num" type="number" class="num-mirror" step="1" aria-label="Max exercises, exact value">
+          </div>
+        </div>
+
+        <div class="field slider-field">
+          <label for="input-n_min">Min exercises (n_min)</label>
+          <div class="slider-row">
+            <input id="input-n_min" type="range" step="1">
+            <input id="input-n_min-num" type="number" class="num-mirror" step="1" aria-label="Min exercises, exact value">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="input-q_max">Volume per exercise (q_max)</label>
+          <input id="input-q_max" type="number" step="0.1" min="0.01">
+        </div>
+
+        <div class="field slider-field">
+          <label for="input-K">Strike price (K)</label>
+          <div class="slider-row">
+            <input id="input-K" type="range" step="0.1">
+            <input id="input-K-num" type="number" class="num-mirror" step="0.1" aria-label="Strike price, exact value">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="model-heading">
+        <h2 id="model-heading">Model parameters</h2>
+
+        <div class="field">
+          <label for="input-alpha_preset">Commodity preset</label>
+          <select id="input-alpha_preset"></select>
+        </div>
+
+        <p id="illustrative-note" class="illustrative-note" hidden>
+          This preset is illustrative, not calibrated to market data.
+        </p>
+
+        <div class="field slider-field">
+          <label for="input-kappa">Mean reversion speed (&kappa;)</label>
+          <div class="slider-row">
+            <input id="input-kappa" type="range" step="0.1">
+            <input id="input-kappa-num" type="number" class="num-mirror" step="0.1" aria-label="Mean reversion speed, exact value">
+          </div>
+        </div>
+
+        <div class="field slider-field">
+          <label for="input-sigma">Volatility (&sigma;)</label>
+          <div class="slider-row">
+            <input id="input-sigma" type="range" step="0.1">
+            <input id="input-sigma-num" type="number" class="num-mirror" step="0.1" aria-label="Volatility, exact value">
+          </div>
+        </div>
+
+        <div class="field slider-field">
+          <label for="input-r">Risk-free rate (r)</label>
+          <div class="slider-row">
+            <input id="input-r" type="range" step="0.01">
+            <input id="input-r-num" type="number" class="num-mirror" step="0.01" aria-label="Risk-free rate, exact value">
+          </div>
+        </div>
+
+        <div class="derived">
+          <div class="derived-row">
+            <span class="label">Moneyness (K / level)</span>
+            <span class="value" id="derived-moneyness">&ndash;</span>
+          </div>
+          <div class="derived-row">
+            <span class="label">Stationary s.d. (&sigma; / &radic;2&kappa;)</span>
+            <span class="value" id="derived-sd">&ndash;</span>
+          </div>
+          <div class="derived-row">
+            <span class="label">Stationary s.d., % of level</span>
+            <span class="value" id="derived-sd-pct">&ndash;</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel about-panel" aria-labelledby="about-heading">
+        <h2 id="about-heading">About</h2>
+        <p>A swing option lets the holder exercise a variable number of times over its life, each time locking in a fixed volume at a fixed strike, subject to a minimum and maximum total number of exercises. The holder's problem is to decide, at every date and every level of remaining capacity, whether the spot price is high enough to exercise now or better left for later.</p>
+        <p>The surface above is the solution to that problem: for each trading date and each cumulative volume already exercised, it shows the price S* above which immediate exercise is optimal. Where no finite threshold exists, exercise is forced by the contract's minimum-volume constraint and the surface shows a gap.</p>
+        <p>Change the contract and model parameters on the left to re-solve for a different commodity, strike, or capacity schedule.</p>
+        <p><a href="https://github.com/deank055/swing-option-viewer#readme">Full write-up and methodology in the repository README &rarr;</a></p>
+        <dl class="note" id="resolution-note-block" hidden>
+          <dt>Resolution</dt>
+          <dd id="resolution-note-text"></dd>
+        </dl>
+      </section>
+
+    </div>
+
+    <div class="actions">
+      <button id="btn-calculate" type="button">Calculate</button>
+      <button id="btn-copy-link" type="button">Copy link</button>
+      <button id="btn-download-csv" type="button">Download CSV</button>
+      <span id="status-msg" class="status" role="status" aria-live="polite"></span>
+    </div>
+
+    <div id="error-msg" class="error" role="alert" hidden></div>
+
+    <section class="chart-section">
+      <h2 class="visually-hidden">Exercise boundary surface</h2>
+      <div id="surface-plot" class="plot surface-plot"></div>
+    </section>
+
+    <section class="chart-section slice-section">
+      <div class="field slider-field">
+        <label for="input-slice">Slice at fixed cumulative volume C</label>
+        <div class="slider-row">
+          <input id="input-slice" type="range" step="1">
+          <output id="slice-value" for="input-slice"></output>
+        </div>
+      </div>
+      <div id="slice-plot" class="plot slice-plot"></div>
+    </section>
+
+    <section class="stats-section" aria-labelledby="stats-heading">
+      <h2 id="stats-heading">Summary statistics</h2>
+      <table id="stats-table">
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    Bachelor's thesis companion tool &middot;
+    <a href="https://github.com/deank055/swing-option-viewer">deank055/swing-option-viewer</a>
+  </footer>
+
+</div>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+<script src="preset.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
