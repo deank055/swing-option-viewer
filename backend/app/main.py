@@ -20,7 +20,7 @@ from .service import solve
 #   https://<username>.github.io
 _origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 
-app = FastAPI(title="Swing option boundary viewer", version="0.1")
+app = FastAPI(title="Swing option boundary viewer", version="0.2")
 
 app.add_middleware(
     CORSMiddleware,

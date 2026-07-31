@@ -15,8 +15,9 @@ import numpy as np
 
 from .schema import SolveRequest
 
-# Tune this against the slowest permitted config (T=5, n_max=150) until that
-# lands under ~5 seconds on the deployed instance, not on your laptop.
+# Tune this against the slowest permitted config (T=5, max_exercises=1260,
+# kappa at its floor) until that lands under ~5 seconds on the deployed
+# instance, not on your laptop.
 WORK_BUDGET = 5.0e7
 
 # Plotly gets sluggish past roughly 50k surface points, so cap the time axis.
@@ -28,9 +29,29 @@ _CACHE_MAX = 128
 
 def choose_k_sub(cfg: SolveRequest, price_nodes: int) -> int:
     """Adaptive sub-stepping so every config costs about the same wall clock."""
-    per_step = price_nodes * (cfg.n_max + 1)
+    per_step = price_nodes * (cfg.max_exercises + 1)
     k_sub = WORK_BUDGET / max(cfg.N * per_step, 1.0)
     return int(max(1, min(100, round(k_sub))))
+
+
+def check_budget(cfg: SolveRequest) -> None:
+    """Reject configs that exceed the work budget even at K_sub = 1.
+
+    choose_k_sub() adapts K_sub down to keep wall clock roughly constant, but
+    it floors at 1 -- past that point there is no more slack to trade away,
+    and a config that's still over budget at the floor has to be refused
+    rather than silently solved at a coarser (wrong) resolution.
+    """
+    price_nodes = estimate_price_nodes(cfg)
+    cost_at_floor = cfg.N * 1 * price_nodes * (cfg.max_exercises + 1)
+    if cost_at_floor > WORK_BUDGET:
+        overshoot = cost_at_floor / WORK_BUDGET
+        raise ValueError(
+            f"This combination exceeds the solver budget: horizon {cfg.T:g}y "
+            f"with {cfg.max_exercises} exercises at kappa={cfg.kappa:g} costs "
+            f"roughly {overshoot:.0f}x the limit. Reduce the horizon, the "
+            "exercise count, or increase mean reversion."
+        )
 
 
 def estimate_price_nodes(cfg: SolveRequest) -> int:
@@ -56,7 +77,7 @@ def _solve_boundary(cfg: SolveRequest, k_sub: int) -> tuple[np.ndarray, dict]:
 
     Returns
     -------
-    boundary : (N, n_max + 1) float array
+    boundary : (N, max_exercises + 1) float array
         S*(i, n) in price units. np.nan where no finite threshold exists,
         which happens in the forced region and where exercise is never
         optimal. Those become JSON null downstream.
@@ -66,19 +87,21 @@ def _solve_boundary(cfg: SolveRequest, k_sub: int) -> tuple[np.ndarray, dict]:
     t = np.arange(N) / N * cfg.T
     alpha = alpha_curve(cfg, t)
 
-    n_remaining = np.arange(cfg.n_max + 1)[None, :]
+    n_remaining = np.arange(cfg.max_exercises + 1)[None, :]
     dates_left = (N - np.arange(N))[:, None]
 
     # Premium above the seasonal level: falls as exercises accumulate,
     # widened by the stationary spread.
-    scarcity = np.clip(1.0 - n_remaining / max(cfg.n_max, 1), 0.0, 1.0)
+    scarcity = np.clip(1.0 - n_remaining / max(cfg.max_exercises, 1), 0.0, 1.0)
     premium = 0.9 * cfg.stationary_sd * (0.25 + scarcity)
 
     boundary = alpha[:, None] + premium + 0.15 * (cfg.K - cfg.preset["level"])
 
-    # Forced region: not enough dates remain to reach n_min, so exercise is
-    # mandatory and no threshold exists.
-    min_still_needed = np.clip(cfg.n_min - (cfg.n_max - n_remaining), 0, None)
+    # Forced region: not enough dates remain to reach min_exercises, so
+    # exercise is mandatory and no threshold exists.
+    min_still_needed = np.clip(
+        cfg.min_exercises - (cfg.max_exercises - n_remaining), 0, None
+    )
     boundary = np.where(min_still_needed > dates_left, np.nan, boundary)
 
     finite = np.isfinite(boundary)
@@ -87,7 +110,7 @@ def _solve_boundary(cfg: SolveRequest, k_sub: int) -> tuple[np.ndarray, dict]:
     onset = float(t[rows_forced].mean()) if rows_forced.any() else float("nan")
 
     stats = {
-        "price": float(np.nanmean(boundary) * cfg.q_max * cfg.n_max * 0.01),
+        "price": float(np.nanmean(boundary) * cfg.q_max * cfg.max_exercises * 0.01),
         "pct_forced_states": round(100.0 * forced_share, 3),
         "forced_onset_mean_t": None if np.isnan(onset) else round(onset, 4),
         "boundary_alpha_corr": 0.93,
@@ -109,6 +132,8 @@ def _sanitise(arr: np.ndarray, decimals: int = 4) -> list:
 
 
 def solve(cfg: SolveRequest) -> dict[str, Any]:
+    check_budget(cfg)
+
     key = cfg.cache_key()
     if key in _CACHE:
         _CACHE.move_to_end(key)
@@ -130,7 +155,7 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
     result = {
         "boundary": _sanitise(boundary[idx, :]),
         "time_grid": [round(float(v), 6) for v in t_full[idx]],
-        "volume_grid": [float(n * cfg.q_max) for n in range(cfg.n_max + 1)],
+        "volume_grid": [float(n * cfg.q_max) for n in range(cfg.max_exercises + 1)],
         "alpha": [round(float(v), 6) for v in alpha_curve(cfg, t_full[idx])],
         "stats": stats,
         "meta": {

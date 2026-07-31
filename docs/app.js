@@ -2,9 +2,9 @@
   "use strict";
 
   var API_BASE = "https://swing-option-viewer-528005343431.europe-west4.run.app";
-  var CONFIG_KEYS = ["T", "alpha_preset", "kappa", "sigma", "r", "K", "n_max", "n_min", "q_max"];
-  var NUMERIC_KEYS = ["T", "kappa", "sigma", "r", "K", "n_max", "n_min", "q_max"];
-  var SLIDER_KEYS = ["n_max", "n_min", "kappa", "sigma", "r", "K"];
+  var CONFIG_KEYS = ["T", "alpha_preset", "kappa", "sigma", "r", "K", "max_exercises", "min_exercises", "q_max"];
+  var NUMERIC_KEYS = ["T", "kappa", "sigma", "r", "K", "max_exercises", "min_exercises", "q_max"];
+  var SLIDER_KEYS = ["max_exercises", "min_exercises", "kappa", "sigma", "r", "K"];
 
   var STAT_LABELS = {
     price: "Option price",
@@ -59,11 +59,12 @@
         xaxis: { title: { text: "Cumulative volume" } },
         yaxis: { title: { text: "Time (years)" } },
         zaxis: { title: { text: "Exercise threshold ($)" } },
-        // The forced-exercise gap sits at low cumulative volume and late time
-        // (too few exercises used with too little horizon left). Look in from
-        // the high-volume / early-time side so that far corner stays visible
-        // instead of hiding behind the front of the surface.
-        camera: { eye: { x: 1.6, y: -1.6, z: 0.8 } }
+        // A same-sign octant eye (verified by rendering) is what makes all
+        // three axes converge at a single shared corner, with C=0 and t=0
+        // both starting at that corner and increasing away from it -
+        // mixed-sign eyes (e.g. {1.6,-1.6}) split the x/y axes onto
+        // non-adjacent edges instead, so they don't share a vertex with z.
+        camera: { eye: { x: 1.3, y: 1.3, z: 0.9 } }
       },
       font: { family: "IBM Plex Mono, ui-monospace, monospace", size: 11 }
     };
@@ -153,14 +154,27 @@
 
   // ---- bounds / derived values ----
 
+  // The server's max_exercises bound is the smaller of "reachable within N
+  // dates" and "solvable within the work budget", the latter evaluated at
+  // the calibrated kappa/sigma (see presets.max_exercises_by_T). It's
+  // indicative, not authoritative -- service.check_budget() is what actually
+  // enforces it, since the true bound also depends on kappa/sigma.
+  function maxExercisesBoundForT(T) {
+    var N = Math.round(T * presets.dates_per_year);
+    var entries = presets.max_exercises_by_T || [];
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].T === T) return Math.min(entries[i].max_exercises, N);
+    }
+    return N;
+  }
+
   function boundsFor(key, cfg) {
-    var N = Math.round(cfg.T * presets.dates_per_year);
     var preset = presets.alpha_presets[cfg.alpha_preset];
     switch (key) {
-      case "n_max":
-        return { min: 1, max: Math.min(presets.n_max_cap, N), step: 1 };
-      case "n_min":
-        return { min: 0, max: cfg.n_max, step: 1 };
+      case "max_exercises":
+        return { min: 1, max: maxExercisesBoundForT(cfg.T), step: 1 };
+      case "min_exercises":
+        return { min: 0, max: cfg.max_exercises, step: 1 };
       case "kappa":
         return presets.ranges.kappa;
       case "sigma":
@@ -170,6 +184,10 @@
       case "K": {
         var kMin = presets.ranges.K.min > 0 ? presets.ranges.K.min : presets.ranges.K.step;
         return { min: kMin, max: preset.K_max, step: presets.ranges.K.step };
+      }
+      case "q_max": {
+        var qMin = presets.ranges.q_max.min > 0 ? presets.ranges.q_max.min : presets.ranges.q_max.step;
+        return { min: qMin, max: presets.ranges.q_max.max, step: presets.ranges.q_max.step };
       }
     }
   }
@@ -181,9 +199,8 @@
     if (presets.T_choices.indexOf(cfg.T) === -1) cfg.T = presets.calibrated.T;
     if (!presets.alpha_presets[cfg.alpha_preset]) cfg.alpha_preset = presets.calibrated.alpha_preset;
 
-    var N = Math.round(cfg.T * presets.dates_per_year);
-    cfg.n_max = Math.round(clamp(cfg.n_max, 1, Math.min(presets.n_max_cap, N)));
-    cfg.n_min = Math.round(clamp(cfg.n_min, 0, cfg.n_max));
+    cfg.max_exercises = Math.round(clamp(cfg.max_exercises, 1, maxExercisesBoundForT(cfg.T)));
+    cfg.min_exercises = Math.round(clamp(cfg.min_exercises, 0, cfg.max_exercises));
 
     cfg.kappa = clamp(cfg.kappa, presets.ranges.kappa.min, presets.ranges.kappa.max);
     var preset = presets.alpha_presets[cfg.alpha_preset];
@@ -191,7 +208,8 @@
     cfg.r = clamp(cfg.r, presets.ranges.r.min, presets.ranges.r.max);
     var kMin = presets.ranges.K.min > 0 ? presets.ranges.K.min : presets.ranges.K.step;
     cfg.K = clamp(cfg.K, kMin, preset.K_max);
-    if (!(cfg.q_max > 0)) cfg.q_max = presets.calibrated.q_max;
+    var qBounds = boundsFor("q_max", cfg);
+    cfg.q_max = clamp(cfg.q_max, qBounds.min, qBounds.max);
 
     return cfg;
   }
@@ -200,7 +218,11 @@
     $("input-T").value = String(config.T);
     $("input-alpha_preset").value = config.alpha_preset;
     $("input-N").value = String(Math.round(config.T * presets.dates_per_year));
-    $("input-q_max").value = config.q_max;
+
+    var qBounds = boundsFor("q_max", config);
+    var qInput = $("input-q_max");
+    qInput.min = qBounds.min; qInput.max = qBounds.max; qInput.step = qBounds.step;
+    qInput.value = config.q_max;
 
     SLIDER_KEYS.forEach(function (key) {
       var b = boundsFor(key, config);
@@ -314,13 +336,12 @@
     if (presets.T_choices.indexOf(cfg.T) === -1) {
       errs.push("T must be one of " + presets.T_choices.join(", "));
     }
-    var N = Math.round(cfg.T * presets.dates_per_year);
-    var nMaxCap = Math.min(presets.n_max_cap, N);
-    if (!(cfg.n_max >= 1 && cfg.n_max <= nMaxCap)) {
-      errs.push("n_max must be between 1 and " + nMaxCap);
+    var maxExercisesCap = maxExercisesBoundForT(cfg.T);
+    if (!(cfg.max_exercises >= 1 && cfg.max_exercises <= maxExercisesCap)) {
+      errs.push("max_exercises must be between 1 and " + maxExercisesCap);
     }
-    if (!(cfg.n_min >= 0 && cfg.n_min <= cfg.n_max)) {
-      errs.push("n_min must be between 0 and n_max (" + cfg.n_max + ")");
+    if (!(cfg.min_exercises >= 0 && cfg.min_exercises <= cfg.max_exercises)) {
+      errs.push("min_exercises must be between 0 and max_exercises (" + cfg.max_exercises + ")");
     }
     var preset = presets.alpha_presets[cfg.alpha_preset];
     if (!preset) {
@@ -340,8 +361,9 @@
     if (!(cfg.K > 0 && cfg.K <= preset.K_max)) {
       errs.push("K must be between " + kMin + " and " + preset.K_max + " for this preset");
     }
-    if (!(cfg.q_max > 0)) {
-      errs.push("q_max must be greater than 0");
+    var qBounds = boundsFor("q_max", cfg);
+    if (!(cfg.q_max > 0 && cfg.q_max <= qBounds.max)) {
+      errs.push("q_max must be between " + qBounds.min + " and " + qBounds.max);
     }
     return errs;
   }
@@ -572,9 +594,10 @@
     $("input-q_max").addEventListener("change", function () {
       if (!presets) return;
       var v = parseFloat($("input-q_max").value);
-      if (Number.isNaN(v) || !(v > 0)) v = config.q_max;
+      if (Number.isNaN(v)) v = config.q_max;
       config.q_max = v;
-      $("input-q_max").value = v;
+      config = clampConfig(config);
+      updateAllBoundsAndValues();
     });
 
     SLIDER_KEYS.forEach(function (key) {
