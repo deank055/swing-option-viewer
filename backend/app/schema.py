@@ -20,10 +20,13 @@ Q_MAX_CAP = 1_000_000
 # Baseline spot, thesis config. compute_boundary() needs a spot price to
 # centre the lattice (X_0 = S_0 - alpha(0)); the request schema has no field
 # for it, so it's a fixed constant rather than something exposed per-preset.
-# swing_option/config.py uses S_0 = 3.21 -- this 3.4 is deliberately
-# different for now. Do not "fix" it to match without checking why it was
-# set apart first.
-S_0 = 3.4
+# Matches swing_option/config.py. (Previously set to 3.4, which was actually
+# the strike K -- the two got mixed up.)
+#
+# S_0 is a module constant, not a SolveRequest field, so it is absent from
+# cache_key(): changing it does not invalidate any cached /solve response
+# that's already in _CACHE. Only a process restart clears them.
+S_0 = 3.21
 
 # K is bounded at a multiple of the preset's alpha(0) level, both here and in
 # presets_payload(). Keep this as the one place that multiple is defined.
