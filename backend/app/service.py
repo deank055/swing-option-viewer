@@ -147,6 +147,7 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
     time_grid = solved["time_grid"]
     alpha_vals = solved["alpha"]
     solver_stats = solved["stats"]
+    solver_meta = solved["meta"]
 
     # compute_boundary returns N + 1 dates spanning [0, T] inclusive (the
     # stub returned N, stopping short of T); stride all three of boundary,
@@ -165,6 +166,17 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
         "stationary_sd": solver_stats["stationary_sd"],
         "moneyness": round(cfg.moneyness, 6),
     }
+    # Drop unmeasured stats entirely rather than sending null -- pct_bang_bang
+    # is None whenever q_max == 1 (always true here; see boundary.py), and a
+    # missing row reads better than one rendering as an em dash.
+    stats = {k: v for k, v in stats.items() if v is not None}
+
+    delta_X = float(solver_meta["delta_X"])
+    # delta_X = sigma * sqrt(3 * T / (N * K_sub)) scales as K_sub^(-1/2), so
+    # this rescales the achieved delta_X rather than hardcoding the K_sub=100
+    # figure for the baseline config (0.1391) -- that number is specific to
+    # this sigma/T/N and wrong for anything else.
+    delta_X_at_100 = delta_X * float(np.sqrt(k_sub / 100.0))
 
     result = {
         "boundary": _sanitise(boundary[idx, :]),
@@ -177,12 +189,14 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
             "k_sub": k_sub,
             "price_nodes": price_nodes,
             "time_stride": int(stride),
+            "delta_X": round(delta_X, 6),
             "solve_seconds": round(time.perf_counter() - started, 3),
             "solver_version": "thesis-1.0",
             "cached": False,
             "resolution_note": (
-                f"Solved at K_sub={k_sub}, derived from a fixed work budget. "
-                "Production thesis figures use K_sub=100."
+                f"Solved at K_sub={k_sub} (delta_X={delta_X:.4f}), derived "
+                "from a fixed work budget. Production thesis figures use "
+                f"K_sub=100 (delta_X={delta_X_at_100:.4f} for this config)."
             ),
         },
         "config": cfg.model_dump(),

@@ -166,14 +166,25 @@ def compute_boundary(
     # lattice nodes the process can actually reach (policy is meaningless
     # padding at unreachable nodes -- it's just its zero-initialised
     # default), and capacity levels reachable by that date (reachable_C).
-    reachable = ~np.isnan(grid[ex_idx])  # (N+1, n_nodes)
-    policy_ex = policy[ex_idx]  # (N+1, n_nodes, C_max+1)
-    considered_mask = reachable[:, :, None] & reachable_C[:, None, :]
-    considered = policy_ex[considered_mask]
-    pct_bang_bang = (
-        float(100.0 * np.mean((considered == 0) | (considered == q_max)))
-        if considered.size else None
-    )
+    #
+    # Degenerate at q_max = 1: policy only ever holds 0 or 1, so every
+    # decision is trivially "0 or q_max" and this would read 100% by
+    # construction -- not a measurement of anything. The API always solves
+    # at q_max = 1 (see service.solve()); this is only meaningful at
+    # q_max > 1, which is how validate_boundary.py calls it (q_max=10),
+    # matching the thesis's own measurement (6.2: 0.6% of reachable states
+    # interior, 0.5% of voluntary ones).
+    if q_max == 1:
+        pct_bang_bang = None
+    else:
+        reachable = ~np.isnan(grid[ex_idx])  # (N+1, n_nodes)
+        policy_ex = policy[ex_idx]  # (N+1, n_nodes, C_max+1)
+        considered_mask = reachable[:, :, None] & reachable_C[:, None, :]
+        considered = policy_ex[considered_mask]
+        pct_bang_bang = (
+            float(100.0 * np.mean((considered == 0) | (considered == q_max)))
+            if considered.size else None
+        )
 
     stats = {
         "price": float(option_price),

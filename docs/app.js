@@ -11,7 +11,6 @@
     pct_forced_states: "Forced-exercise states",
     forced_onset_mean_t: "Forced-exercise onset (mean t, yrs)",
     boundary_alpha_corr: "Boundary–α correlation",
-    pct_bang_bang: "Bang-bang states",
     stationary_sd: "Stationary s.d.",
     moneyness: "Moneyness"
   };

@@ -119,7 +119,7 @@
       <section class="panel about-panel" aria-labelledby="about-heading">
         <h2 id="about-heading">About</h2>
         <p>A swing option lets the holder exercise a variable number of times over its life, each time locking in a fixed volume at a fixed strike, subject to a minimum and maximum total number of exercises. The holder's problem is to decide, at every date and every level of remaining capacity, whether the spot price is high enough to exercise now or better left for later.</p>
-        <p>The surface above is the solution to that problem: for each trading date and each cumulative volume already exercised, it shows the price S* above which immediate exercise is optimal. Where no finite threshold exists, exercise is forced by the contract's minimum-volume constraint and the surface shows a gap.</p>
+        <p>The surface above is the solution to that problem: for each trading date and each cumulative volume already exercised, it shows the price S* above which immediate exercise is optimal. Where no finite threshold exists, exercise is forced by the contract's minimum-volume constraint and the surface shows a gap. Each exercise decision here is none-or-full rather than partial, an assumption the thesis justifies by measuring interior (partial) actions at just 0.6% of reachable states.</p>
         <p>Change the contract and model parameters on the left to re-solve for a different asset, strike, or capacity schedule.</p>
         <p><a href="https://github.com/deank055/swing-option-viewer#readme">Full write-up and methodology in the repository README &rarr;</a></p>
         <dl class="note" id="resolution-note-block" hidden>
