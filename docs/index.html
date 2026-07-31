@@ -1,26 +1,22 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Swing option exercise boundary viewer</title>
-<meta name="description" content="Visualise the optimal exercise boundary surface for a swing option on a mean-reverting commodity.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swing option exercise boundary viewer</title>
+  <meta name="description" content="Visualise the optimal exercise boundary surface for a swing option on a mean-reverting asset.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="page">
 
   <header class="site-header">
     <h1>Swing option exercise boundary</h1>
-    <p class="subtitle">The optimal exercise threshold S*(t, C) for a swing option on a mean-reverting commodity price, as a surface over time and cumulative volume.</p>
+    <p class="subtitle">The optimal exercise threshold S*(t, C) for a swing option on a mean-reverting asset price, as a surface over time and cumulative volume.</p>
   </header>
-
-  <div id="stub-banner" class="banner" hidden>
-    <strong>Placeholder solver.</strong> The backend is currently returning stub output for illustration, not the production dynamic-programming solve.
-  </div>
 
   <main>
     <div class="panels">
@@ -56,7 +52,7 @@
 
         <div class="field">
           <label for="input-q_max">Volume per exercise (q_max)</label>
-          <input id="input-q_max" type="number" step="0.1">
+          <input id="input-q_max" type="number" step="1" min="1">
         </div>
 
         <div class="field slider-field">
@@ -72,7 +68,7 @@
         <h2 id="model-heading">Model parameters</h2>
 
         <div class="field">
-          <label for="input-alpha_preset">Commodity preset</label>
+          <label for="input-alpha_preset">asset preset</label>
           <select id="input-alpha_preset"></select>
         </div>
 
@@ -124,7 +120,7 @@
         <h2 id="about-heading">About</h2>
         <p>A swing option lets the holder exercise a variable number of times over its life, each time locking in a fixed volume at a fixed strike, subject to a minimum and maximum total number of exercises. The holder's problem is to decide, at every date and every level of remaining capacity, whether the spot price is high enough to exercise now or better left for later.</p>
         <p>The surface above is the solution to that problem: for each trading date and each cumulative volume already exercised, it shows the price S* above which immediate exercise is optimal. Where no finite threshold exists, exercise is forced by the contract's minimum-volume constraint and the surface shows a gap.</p>
-        <p>Change the contract and model parameters on the left to re-solve for a different commodity, strike, or capacity schedule.</p>
+        <p>Change the contract and model parameters on the left to re-solve for a different asset, strike, or capacity schedule.</p>
         <p><a href="https://github.com/deank055/swing-option-viewer#readme">Full write-up and methodology in the repository README &rarr;</a></p>
         <dl class="note" id="resolution-note-block" hidden>
           <dt>Resolution</dt>

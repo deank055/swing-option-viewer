@@ -15,15 +15,27 @@ T_CHOICES = (0.5, 1.0, 2.0, 5.0)
 KAPPA_MIN, KAPPA_MAX = 0.5, 50.0
 SIGMA_MIN = 0.5
 R_MIN, R_MAX = 0.0, 0.10
-Q_MAX_CAP = 1_000_000.0
+Q_MAX_CAP = 1_000_000
+
+# Baseline spot, thesis config. compute_boundary() needs a spot price to
+# centre the lattice (X_0 = S_0 - alpha(0)); the request schema has no field
+# for it, so it's a fixed constant rather than something exposed per-preset.
+S_0 = 3.4
 
 # K is bounded at a multiple of the preset's alpha(0) level, both here and in
 # presets_payload(). Keep this as the one place that multiple is defined.
 K_MAX_MULTIPLE = 2.0
 
+# max_exercises/min_exercises are restricted to multiples of this, which
+# keeps the /solve cache-key space bounded (see the ladder-ceiling check in
+# _check() and _max_exercises_for_T() below) rather than letting every
+# integer in [1, N] be a distinct cache entry. 21 is the coarsest step that
+# lands the baseline pair (126, 105) exactly.
+LADDER_STEP = 21
+
 # Seasonal presets. `level` is alpha(0) and sets the scale for K and sigma.
-# `amp` and `phase` describe the annual harmonic used by the stub; replace
-# with the real calibrated alpha coefficients when wiring the solver.
+# `amp` and `phase` describe the annual harmonic; service._alpha_func() turns
+# these into the alpha_func the solver calls.
 ALPHA_PRESETS: dict[str, dict[str, Any]] = {
     "henry_hub": {
         "label": "Natural gas (Henry Hub, calibrated)",
@@ -78,16 +90,16 @@ class SolveRequest(BaseModel):
     K: float = Field(3.4004, gt=0.0)
 
     max_exercises: int = Field(
-        126, ge=1,
+        126, ge=LADDER_STEP, multiple_of=LADDER_STEP,
         description="Number of full exercises available over the contract",
     )
     min_exercises: int = Field(
-        105, ge=0,
+        105, ge=0, multiple_of=LADDER_STEP,
         description="Minimum number of full exercises required",
     )
 
-    q_max: float = Field(
-        10.0, gt=0.0, le=Q_MAX_CAP, description="Display scale only",
+    q_max: int = Field(
+        10, ge=1, le=Q_MAX_CAP, description="Display scale only",
     )
 
     @property
@@ -120,13 +132,24 @@ class SolveRequest(BaseModel):
         if self.K > k_max:
             raise ValueError(f"K {self.K} exceeds {k_max} for this preset")
 
-        if self.min_exercises > self.max_exercises:
-            raise ValueError("min_exercises cannot exceed max_exercises")
-
+        # Check the N bound before the ladder-ceiling bound below: an
+        # off-N value like max_exercises=253 at N=252 should be explained by
+        # "exceeds N", not by the (unrelated) ladder ceiling.
         if self.max_exercises > self.N:
             raise ValueError(
                 f"max_exercises {self.max_exercises} exceeds N = {self.N}"
             )
+
+        ladder_ceiling = min(self.N, DATES_PER_YEAR)
+        if self.max_exercises > ladder_ceiling:
+            raise ValueError(
+                f"max_exercises {self.max_exercises} exceeds the capacity "
+                f"ladder ceiling of {ladder_ceiling} (multiples of "
+                f"{LADDER_STEP} up to min(N, {DATES_PER_YEAR}))"
+            )
+
+        if self.min_exercises > self.max_exercises:
+            raise ValueError("min_exercises cannot exceed max_exercises")
 
         return self
 
@@ -139,7 +162,8 @@ class SolveRequest(BaseModel):
 
 
 def _max_exercises_for_T(T: float) -> int:
-    """Indicative work-budget bound on max_exercises for a given horizon.
+    """Indicative work-budget bound on max_exercises for a given horizon,
+    rounded down to a valid ladder rung.
 
     Evaluated at the calibrated kappa/sigma. At lower kappa the price lattice
     is wider and the true bound is smaller; service.check_budget() is the
@@ -148,10 +172,14 @@ def _max_exercises_for_T(T: float) -> int:
     from .service import WORK_BUDGET, estimate_price_nodes  # lazy: avoids import cycle
 
     N = int(round(T * DATES_PER_YEAR))
-    probe = SolveRequest(T=T, max_exercises=1, min_exercises=0)
+    probe = SolveRequest(T=T, max_exercises=LADDER_STEP, min_exercises=0)
     price_nodes = estimate_price_nodes(probe)
     max_by_budget = WORK_BUDGET / max(N * price_nodes, 1.0) - 1
-    return max(1, min(N, int(max_by_budget)))
+
+    ladder_ceiling = min(N, DATES_PER_YEAR)
+    bound = min(ladder_ceiling, int(max_by_budget))
+    rungs = max(1, bound // LADDER_STEP)
+    return rungs * LADDER_STEP
 
 
 def presets_payload() -> dict[str, Any]:
@@ -162,6 +190,7 @@ def presets_payload() -> dict[str, Any]:
         "dates_per_year": DATES_PER_YEAR,
         "T_choices": list(T_CHOICES),
         "work_budget": WORK_BUDGET,
+        "exercise_ladder_step": LADDER_STEP,
         "max_exercises_by_T": [
             {"T": t, "max_exercises": _max_exercises_for_T(t)} for t in T_CHOICES
         ],
@@ -170,7 +199,7 @@ def presets_payload() -> dict[str, Any]:
             "sigma": {"min": SIGMA_MIN, "step": 0.1},
             "r": {"min": R_MIN, "max": R_MAX, "step": 0.01},
             "K": {"min": 0.0, "step": 0.1},
-            "q_max": {"min": 0.0, "max": Q_MAX_CAP, "step": 0.1},
+            "q_max": {"min": 1, "max": Q_MAX_CAP, "step": 1},
         },
         "alpha_presets": {
             key: {

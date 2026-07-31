@@ -99,7 +99,6 @@
     var tbody = document.querySelector("#stats-table tbody");
     tbody.innerHTML = "";
     Object.keys(stats || {}).forEach(function (key) {
-      if (key === "STUB") return;
       var val = stats[key];
       var tr = document.createElement("tr");
       var tdLabel = document.createElement("td");
@@ -110,7 +109,6 @@
       tr.appendChild(tdVal);
       tbody.appendChild(tr);
     });
-    $("stub-banner").hidden = !(stats && stats.STUB);
   }
 
   function formatStatValue(key, val) {
@@ -168,13 +166,23 @@
     return N;
   }
 
+  // max_exercises/min_exercises are restricted server-side to multiples of
+  // presets.exercise_ladder_step (see schema.SolveRequest and _check()) --
+  // it bounds the /solve cache-key space, not a display choice, so the
+  // sliders must snap to it rather than assuming a step of 1.
+  function roundToStep(value, step, base) {
+    if (!(step > 0)) return value;
+    return Math.round((value - base) / step) * step + base;
+  }
+
   function boundsFor(key, cfg) {
     var preset = presets.alpha_presets[cfg.alpha_preset];
+    var ladderStep = presets.exercise_ladder_step;
     switch (key) {
       case "max_exercises":
-        return { min: 1, max: maxExercisesBoundForT(cfg.T), step: 1 };
+        return { min: ladderStep, max: maxExercisesBoundForT(cfg.T), step: ladderStep };
       case "min_exercises":
-        return { min: 0, max: cfg.max_exercises, step: 1 };
+        return { min: 0, max: cfg.max_exercises, step: ladderStep };
       case "kappa":
         return presets.ranges.kappa;
       case "sigma":
@@ -199,8 +207,10 @@
     if (presets.T_choices.indexOf(cfg.T) === -1) cfg.T = presets.calibrated.T;
     if (!presets.alpha_presets[cfg.alpha_preset]) cfg.alpha_preset = presets.calibrated.alpha_preset;
 
-    cfg.max_exercises = Math.round(clamp(cfg.max_exercises, 1, maxExercisesBoundForT(cfg.T)));
-    cfg.min_exercises = Math.round(clamp(cfg.min_exercises, 0, cfg.max_exercises));
+    var ladderStep = presets.exercise_ladder_step;
+    var maxCeil = maxExercisesBoundForT(cfg.T);
+    cfg.max_exercises = clamp(roundToStep(cfg.max_exercises, ladderStep, ladderStep), ladderStep, maxCeil);
+    cfg.min_exercises = clamp(roundToStep(cfg.min_exercises, ladderStep, 0), 0, cfg.max_exercises);
 
     cfg.kappa = clamp(cfg.kappa, presets.ranges.kappa.min, presets.ranges.kappa.max);
     var preset = presets.alpha_presets[cfg.alpha_preset];
@@ -209,7 +219,7 @@
     var kMin = presets.ranges.K.min > 0 ? presets.ranges.K.min : presets.ranges.K.step;
     cfg.K = clamp(cfg.K, kMin, preset.K_max);
     var qBounds = boundsFor("q_max", cfg);
-    cfg.q_max = clamp(cfg.q_max, qBounds.min, qBounds.max);
+    cfg.q_max = Math.round(clamp(cfg.q_max, qBounds.min, qBounds.max));
 
     return cfg;
   }
@@ -593,7 +603,7 @@
 
     $("input-q_max").addEventListener("change", function () {
       if (!presets) return;
-      var v = parseFloat($("input-q_max").value);
+      var v = parseInt($("input-q_max").value, 10);
       if (Number.isNaN(v)) v = config.q_max;
       config.q_max = v;
       config = clampConfig(config);

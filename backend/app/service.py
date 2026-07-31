@@ -3,22 +3,36 @@
 Deliberately imports nothing from FastAPI. This is what lets the same code be
 called from a notebook, a CLI, or a batch precompute script later.
 
-The real solver plugs in at `_solve_boundary`. Everything else -- work budget,
-decimation, JSON sanitising, caching -- stays as is.
+Wires the API layer to boundary.compute_boundary(), the thesis solver. Work
+budget, decimation, JSON sanitising, and caching are app-layer concerns and
+stay here.
 """
 
+import os
 import time
 from collections import OrderedDict
 from typing import Any
 
 import numpy as np
 
-from .schema import SolveRequest
+from .boundary import compute_boundary
+from .schema import S_0, SolveRequest
 
 # Tune this against the slowest permitted config (T=5, max_exercises=1260,
 # kappa at its floor) until that lands under ~5 seconds on the deployed
 # instance, not on your laptop.
 WORK_BUDGET = 5.0e7
+
+# V is float32 and policy is int8 over the same (N*K_sub+1, n_nodes,
+# max_exercises+1) shape, so together they cost about 5 bytes per element.
+# choose_k_sub() caps K_sub by this in addition to WORK_BUDGET so a config
+# that's cheap in wall-clock terms can't still blow the container's memory.
+# Read from an env var (Cloud Run memory limits vary by deploy) with a
+# conservative default; kept here rather than in swing_option.core.memory
+# since that module's MEMORY_LIMIT_GB is about the thesis's own experiment
+# budget, not about what fits in this container.
+MEMORY_LIMIT_BYTES = int(os.environ.get("SOLVE_MEMORY_LIMIT_MB", "512")) * 1_000_000
+BYTES_PER_ELEMENT = 5
 
 # Plotly gets sluggish past roughly 50k surface points, so cap the time axis.
 MAX_SURFACE_TIME_POINTS = 252
@@ -28,9 +42,12 @@ _CACHE_MAX = 128
 
 
 def choose_k_sub(cfg: SolveRequest, price_nodes: int) -> int:
-    """Adaptive sub-stepping so every config costs about the same wall clock."""
+    """Adaptive sub-stepping so every config costs about the same wall clock,
+    capped so V + policy also fit within the memory ceiling."""
     per_step = price_nodes * (cfg.max_exercises + 1)
-    k_sub = WORK_BUDGET / max(cfg.N * per_step, 1.0)
+    k_sub_budget = WORK_BUDGET / max(cfg.N * per_step, 1.0)
+    k_sub_memory = MEMORY_LIMIT_BYTES / max(BYTES_PER_ELEMENT * cfg.N * per_step, 1.0)
+    k_sub = min(k_sub_budget, k_sub_memory)
     return int(max(1, min(100, round(k_sub))))
 
 
@@ -67,59 +84,19 @@ def estimate_price_nodes(cfg: SolveRequest) -> int:
     return int(min(2000, max(21, 2 * round(half_width / max(dx, 1e-9)) + 1)))
 
 
-def alpha_curve(cfg: SolveRequest, t: np.ndarray) -> np.ndarray:
-    p = cfg.preset
-    return p["level"] * (1.0 + p["amp"] * np.cos(2.0 * np.pi * (t - p["phase"])))
+def _alpha_func(cfg: SolveRequest):
+    """Seasonal level function for this config's preset.
 
-
-def _solve_boundary(cfg: SolveRequest, k_sub: int) -> tuple[np.ndarray, dict]:
-    """STUB. Replace with the real backward DP.
-
-    Returns
-    -------
-    boundary : (N, max_exercises + 1) float array
-        S*(i, n) in price units. np.nan where no finite threshold exists,
-        which happens in the forced region and where exercise is never
-        optimal. Those become JSON null downstream.
-    stats : dict
+    Wrapped in np.asarray so it works both as a scalar call --
+    compute_option_value calls alpha_func(i * delta_t) -- and as an array
+    call -- compute_boundary calls alpha_func(time_grid).
     """
-    N = cfg.N
-    t = np.arange(N) / N * cfg.T
-    alpha = alpha_curve(cfg, t)
+    p = cfg.preset
 
-    n_remaining = np.arange(cfg.max_exercises + 1)[None, :]
-    dates_left = (N - np.arange(N))[:, None]
+    def alpha(t):
+        return p["level"] * (1.0 + p["amp"] * np.cos(2.0 * np.pi * (np.asarray(t) - p["phase"])))
 
-    # Premium above the seasonal level: falls as exercises accumulate,
-    # widened by the stationary spread.
-    scarcity = np.clip(1.0 - n_remaining / max(cfg.max_exercises, 1), 0.0, 1.0)
-    premium = 0.9 * cfg.stationary_sd * (0.25 + scarcity)
-
-    boundary = alpha[:, None] + premium + 0.15 * (cfg.K - cfg.preset["level"])
-
-    # Forced region: not enough dates remain to reach min_exercises, so
-    # exercise is mandatory and no threshold exists.
-    min_still_needed = np.clip(
-        cfg.min_exercises - (cfg.max_exercises - n_remaining), 0, None
-    )
-    boundary = np.where(min_still_needed > dates_left, np.nan, boundary)
-
-    finite = np.isfinite(boundary)
-    forced_share = float(1.0 - finite.mean())
-    rows_forced = (~finite).any(axis=1)
-    onset = float(t[rows_forced].mean()) if rows_forced.any() else float("nan")
-
-    stats = {
-        "price": float(np.nanmean(boundary) * cfg.q_max * cfg.max_exercises * 0.01),
-        "pct_forced_states": round(100.0 * forced_share, 3),
-        "forced_onset_mean_t": None if np.isnan(onset) else round(onset, 4),
-        "boundary_alpha_corr": 0.93,
-        "pct_bang_bang": 99.0,
-        "stationary_sd": round(cfg.stationary_sd, 6),
-        "moneyness": round(cfg.moneyness, 6),
-        "STUB": True,
-    }
-    return boundary, stats
+    return alpha
 
 
 def _sanitise(arr: np.ndarray, decimals: int = 4) -> list:
@@ -145,26 +122,56 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
 
     price_nodes = estimate_price_nodes(cfg)
     k_sub = choose_k_sub(cfg, price_nodes)
-    boundary, stats = _solve_boundary(cfg, k_sub)
 
-    N = cfg.N
-    stride = max(1, N // MAX_SURFACE_TIME_POINTS)
-    idx = np.arange(0, N, stride)
+    # Capacity in exercise counts, not volume: the arithmetic payoff is
+    # affine, so S*(i, C) is invariant to a common rescaling of q_max and the
+    # capacity bounds. Solve at q_max = 1 and rescale price below; q_max is a
+    # display label only from here on.
+    solved = compute_boundary(
+        T=cfg.T, N=cfg.N, sigma=cfg.sigma, kappa=cfg.kappa, r=cfg.r, K=cfg.K,
+        S_0=S_0, alpha_func=_alpha_func(cfg),
+        C_max=cfg.max_exercises,
+        C_min=cfg.min_exercises,
+        q_max=1,
+        K_sub=k_sub,
+    )
 
-    t_full = np.arange(N) / N * cfg.T
+    boundary = solved["boundary"]
+    time_grid = solved["time_grid"]
+    alpha_vals = solved["alpha"]
+    solver_stats = solved["stats"]
+
+    # compute_boundary returns N + 1 dates spanning [0, T] inclusive (the
+    # stub returned N, stopping short of T); stride all three of boundary,
+    # time_grid and alpha together off the solver's own arrays so they stay
+    # aligned, rather than rebuilding a separate time axis here.
+    total_dates = cfg.N + 1
+    stride = max(1, total_dates // MAX_SURFACE_TIME_POINTS)
+    idx = np.arange(0, total_dates, stride)
+
+    stats = {
+        "price": round(float(solver_stats["price"]) * cfg.q_max, 4),
+        "pct_forced_states": solver_stats["pct_forced_volume"],
+        "forced_onset_mean_t": solver_stats["forced_onset_mean_t"],
+        "boundary_alpha_corr": solver_stats["boundary_alpha_corr"],
+        "pct_bang_bang": solver_stats["pct_bang_bang"],
+        "stationary_sd": solver_stats["stationary_sd"],
+        "moneyness": round(cfg.moneyness, 6),
+    }
+
     result = {
         "boundary": _sanitise(boundary[idx, :]),
-        "time_grid": [round(float(v), 6) for v in t_full[idx]],
+        "time_grid": [round(float(v), 6) for v in time_grid[idx]],
         "volume_grid": [float(n * cfg.q_max) for n in range(cfg.max_exercises + 1)],
-        "alpha": [round(float(v), 6) for v in alpha_curve(cfg, t_full[idx])],
+        "alpha": [round(float(v), 6) for v in alpha_vals[idx]],
         "stats": stats,
         "meta": {
-            "N": N,
+            "N": cfg.N,
             "k_sub": k_sub,
             "price_nodes": price_nodes,
             "time_stride": int(stride),
             "solve_seconds": round(time.perf_counter() - started, 3),
-            "solver_version": "stub-0.1",
+            "solver_version": "thesis-1.0",
             "cached": False,
             "resolution_note": (
                 f"Solved at K_sub={k_sub}, derived from a fixed work budget. "
