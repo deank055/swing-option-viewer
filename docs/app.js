@@ -57,13 +57,19 @@
       margin: { l: 0, r: 0, t: 10, b: 0 },
       scene: {
         xaxis: { title: { text: "Cumulative volume" } },
-        yaxis: { title: { text: "Time (years)" } },
+        // Reversed so t = T sits at the shared corner and time runs toward
+        // the viewer as it decreases -- without this the axis reads T to 0
+        // along the direction the viewer looks, mirrored against the thesis
+        // figure. result.time_grid itself is ascending; only the axis
+        // display direction is flipped here.
+        yaxis: { title: { text: "Time (years)" }, autorange: "reversed" },
         zaxis: { title: { text: "Exercise threshold ($)" } },
-        // A same-sign octant eye (verified by rendering) is what makes all
-        // three axes converge at a single shared corner, with C=0 and t=0
-        // both starting at that corner and increasing away from it -
-        // mixed-sign eyes (e.g. {1.6,-1.6}) split the x/y axes onto
-        // non-adjacent edges instead, so they don't share a vertex with z.
+        // A same-sign octant eye is what makes all three axes converge at a
+        // single shared corner -- mixed-sign eyes (e.g. {1.6,-1.6}) split
+        // the x/y axes onto non-adjacent edges instead, so they don't share
+        // a vertex with z. Which data value sits at that corner is the
+        // axes' own autorange/reversed setting, not the camera; eye is
+        // otherwise unrelated to the fix above and is left as it was.
         camera: { eye: { x: 1.3, y: 1.3, z: 0.9 } }
       },
       font: { family: "IBM Plex Mono, ui-monospace, monospace", size: 11 }
