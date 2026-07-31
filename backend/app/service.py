@@ -85,7 +85,9 @@ def estimate_price_nodes(cfg: SolveRequest) -> int:
 
 
 def _alpha_func(cfg: SolveRequest):
-    """Seasonal level function for this config's preset.
+    """Seasonal level function for this config's preset: a two-harmonic
+    Fourier series with a linear trend, matching swing_option/config.py's
+    alpha(t) exactly (same six coefficients, same functional form).
 
     Wrapped in np.asarray so it works both as a scalar call --
     compute_option_value calls alpha_func(i * delta_t) -- and as an array
@@ -94,7 +96,12 @@ def _alpha_func(cfg: SolveRequest):
     p = cfg.preset
 
     def alpha(t):
-        return p["level"] * (1.0 + p["amp"] * np.cos(2.0 * np.pi * (np.asarray(t) - p["phase"])))
+        t = np.asarray(t, dtype=float)
+        return (
+            p["a0"] + p["b_trend"] * t
+            + p["a1"] * np.cos(2.0 * np.pi * t) + p["b1"] * np.sin(2.0 * np.pi * t)
+            + p["a2"] * np.cos(4.0 * np.pi * t) + p["b2"] * np.sin(4.0 * np.pi * t)
+        )
 
     return alpha
 

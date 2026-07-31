@@ -116,6 +116,22 @@ def compute_boundary(
     boundary = boundary_interp_full[ex_idx]
     forced_mask = forced_mask_full[ex_idx]
 
+    # A state (date i, cumulative volume C) is only reachable if enough
+    # exercise dates have passed to have accumulated C at q_max per date:
+    # C <= i * q_max. The DP fills V/policy at every (i, j, C) regardless, so
+    # without this, extract_boundary/interpolate_boundary return
+    # plausible-looking thresholds at states the process can never occupy --
+    # C = C_max at i = 0 is the clearest case. Same condition
+    # structural_properties.py uses (there: min_i_C = ceil(C / q_max),
+    # reachable = min_i_C <= i). The C_min side needs no equivalent mask:
+    # forced states already have q = 0 inadmissible, so every reachable
+    # price node exercises, extract_boundary's `valid` is already False
+    # there, and the cell is already NaN.
+    date_idx = np.arange(boundary.shape[0])[:, None]
+    vol_idx = np.arange(boundary.shape[1])[None, :]
+    reachable_C = vol_idx <= date_idx * q_max
+    boundary = np.where(reachable_C, boundary, np.nan)
+
     time_grid = ex_idx * delta_t
     alpha_vals = alpha_func(time_grid)
 
@@ -123,18 +139,19 @@ def compute_boundary(
     stationary_sd = sigma / np.sqrt(2.0 * kappa)
 
     # Mean date among (date, C) states where q=0 is inadmissible -- i.e.
-    # dates that have at least one forced-exercise capacity level.
-    forced_rows = forced_mask.any(axis=1)
+    # dates that have at least one forced-exercise capacity level -- among
+    # states that can actually occur.
+    forced_rows = (forced_mask & reachable_C).any(axis=1)
     forced_onset_mean_t = (
         float(time_grid[forced_rows].mean()) if forced_rows.any() else None
     )
 
     # No path simulation happens here (that's policy_analysis.py's job), so
     # "share of volume that is forced" is read off the state space directly:
-    # the fraction of (date, C) cells where the minimum-volume constraint
-    # forbids q=0. Equal-weighted per cell, i.e. per unit of cumulative
-    # volume already exercised, across every exercise date.
-    pct_forced_volume = float(100.0 * forced_mask.mean())
+    # the fraction of reachable (date, C) cells where the minimum-volume
+    # constraint forbids q=0. Equal-weighted per cell, i.e. per unit of
+    # cumulative volume already exercised, across every exercise date.
+    pct_forced_volume = float(100.0 * forced_mask[reachable_C].mean())
 
     alpha_broadcast = np.broadcast_to(alpha_vals[:, None], boundary.shape)
     finite = np.isfinite(boundary)
@@ -146,11 +163,12 @@ def compute_boundary(
         boundary_alpha_corr = None
 
     # Bang-bang share, restricted to actual decision points: exercise dates,
-    # and lattice nodes the process can actually reach (policy is meaningless
-    # padding at unreachable nodes -- it's just its zero-initialised default).
+    # lattice nodes the process can actually reach (policy is meaningless
+    # padding at unreachable nodes -- it's just its zero-initialised
+    # default), and capacity levels reachable by that date (reachable_C).
     reachable = ~np.isnan(grid[ex_idx])  # (N+1, n_nodes)
     policy_ex = policy[ex_idx]  # (N+1, n_nodes, C_max+1)
-    considered_mask = np.repeat(reachable[:, :, None], C_max + 1, axis=2)
+    considered_mask = reachable[:, :, None] & reachable_C[:, None, :]
     considered = policy_ex[considered_mask]
     pct_bang_bang = (
         float(100.0 * np.mean((considered == 0) | (considered == q_max)))
