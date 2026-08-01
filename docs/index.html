@@ -30,7 +30,7 @@
         </div>
 
         <div class="field">
-          <label for="input-N">Trading dates (N = round(T &times; 252))</label>
+          <label for="input-N">Trading dates (N = T &times; 252)</label>
           <input id="input-N" type="text" readonly tabindex="-1">
         </div>
 
@@ -43,7 +43,7 @@
         </div>
 
         <div class="field slider-field">
-          <label for="input-min_exercises">Min exercises</label>
+          <label for="input-min_exercises">Min exercised volume (C_min)</label>
           <div class="slider-row">
             <input id="input-min_exercises" type="range" step="1">
             <input id="input-min_exercises-num" type="number" class="num-mirror" step="1" aria-label="Min exercises, exact value">
@@ -68,13 +68,9 @@
         <h2 id="model-heading">Model parameters</h2>
 
         <div class="field">
-          <label for="input-alpha_preset">asset preset</label>
+          <label for="input-alpha_preset">Asset preset</label>
           <select id="input-alpha_preset"></select>
         </div>
-
-        <p id="illustrative-note" class="illustrative-note" hidden>
-          This preset is illustrative, not calibrated to market data.
-        </p>
 
         <div class="field slider-field">
           <label for="input-kappa">Mean reversion speed (&kappa;)</label>
@@ -102,7 +98,7 @@
 
         <div class="derived">
           <div class="derived-row">
-            <span class="label">Moneyness (K / level)</span>
+            <span class="label">Moneyness (K / mean)</span>
             <span class="value" id="derived-moneyness">&ndash;</span>
           </div>
           <div class="derived-row">
@@ -110,7 +106,7 @@
             <span class="value" id="derived-sd">&ndash;</span>
           </div>
           <div class="derived-row">
-            <span class="label">Stationary s.d., % of level</span>
+            <span class="label">Stationary s.d., % of mean</span>
             <span class="value" id="derived-sd-pct">&ndash;</span>
           </div>
         </div>
@@ -118,10 +114,11 @@
 
       <section class="panel about-panel" aria-labelledby="about-heading">
         <h2 id="about-heading">About</h2>
-        <p>A swing option lets the holder exercise a variable number of times over its life, each time locking in a fixed volume at a fixed strike, subject to a minimum and maximum total number of exercises. The holder's problem is to decide, at every date and every level of remaining capacity, whether the spot price is high enough to exercise now or better left for later.</p>
-        <p>The surface above is the solution to that problem: for each trading date and each cumulative volume already exercised, it shows the price S* above which immediate exercise is optimal. Where no finite threshold exists, exercise is forced by the contract's minimum-volume constraint and the surface shows a gap. Each exercise decision here is none-or-full rather than partial, an assumption the thesis justifies by measuring interior (partial) actions at just 0.6% of reachable states.</p>
-        <p>Change the contract and model parameters on the left to re-solve for a different asset, strike, or capacity schedule.</p>
-        <p><a href="https://github.com/deank055/swing-option-viewer#readme">Full write-up and methodology in the repository README &rarr;</a></p>
+        <p>A swing option gives its holder the right to buy an underlying at a fixed strike price on each of a series of exercise dates. There is a per-date maximum volume constraint, and the contract sets both a floor and a ceiling on the total volume exercised over its life. At each date the holder considers the current spot, exercised volume, and remaining dates.</p>
+        <p>The surface below is the solution to that problem. For each trading date and each cumulative volume already taken, it shows the price S* above which immediate exercise is optimal. Each decision here is bang-bang, a restriction my thesis justifies by measuring interior actions at just 0.6% of reachable states (which also cuts the state space tenfold).</p>
+        <p>The surface has gaps induced by infeasible states. Early on, high volumes are unreachable, and late in an under-filled contract the take-or-pay floor forces exercise.</p>
+        <p>Change the parameters to the left to re-solve for a different asset or contract.</p>
+        <p><a href="https://github.com/deank055/swing-option-viewer#readme">Repo on GitHub &rarr;</a></p>
         <dl class="note" id="resolution-note-block" hidden>
           <dt>Resolution</dt>
           <dd id="resolution-note-text"></dd>
@@ -164,8 +161,9 @@
   </main>
 
   <footer>
-    Bachelor's thesis companion tool &middot;
-    <a href="https://github.com/deank055/swing-option-viewer">deank055/swing-option-viewer</a>
+    Check out the repo for this app and my thesis &middot;
+    <a href="https://github.com/deank055/swing-option-viewer">deank055/swing-option-viewer</a> &middot;
+    <a href="https://github.com/deank055/Optimal-Strategy-for-Exercising-Swing-Option-For-Mean-Reverting-Assets">deank055/Optimal-Strategy-for-Exercising-Swing-Option-For-Mean-Reverting-Assets</a>
   </footer>
 
 </div>
