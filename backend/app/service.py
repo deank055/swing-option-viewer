@@ -194,9 +194,7 @@ def solve(cfg: SolveRequest) -> dict[str, Any]:
             "solver_version": "thesis-1.0",
             "cached": False,
             "resolution_note": (
-                f"Solved at K_sub={k_sub} (delta_X={delta_X:.4f}), derived "
-                "from a fixed work budget. Production thesis figures use "
-                f"K_sub=100 (delta_X={delta_X_at_100:.4f} for this config)."
+                f"Solved at K_sub={k_sub} (delta_X={delta_X:.4f}), derived from computational budget. My thesis uses K_sub=100."
             ),
         },
         "config": cfg.model_dump(),

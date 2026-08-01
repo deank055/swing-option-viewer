@@ -80,18 +80,19 @@ ALPHA_PRESETS: dict[str, dict[str, Any]] = {
         **_scaled_henry_hub(0.5),  # old amp ratio 0.09 / 0.18
         "sigma_max": 30.0, "illustrative": False,
     },
-    "wti": {
-        "label": "Crude oil (WTI, illustrative)",
-        "a0": 70.0, "b_trend": 0.0, "a1": 1.4, "b1": 0.0, "a2": 0.0, "b2": 0.0,
-        "sigma_max": 400.0, "illustrative": True,
-    },
-    "power": {
-        # cos(2*pi*(t - 0.25)) == sin(2*pi*t), which is why the amplitude
-        # lands on b1 rather than a1 here.
-        "label": "Electricity (illustrative only, OU is misspecified)",
-        "a0": 50.0, "b_trend": 0.0, "a1": 0.0, "b1": 17.5, "a2": 0.0, "b2": 0.0,
-        "sigma_max": 600.0, "illustrative": True,
-    },
+    # Disabled: illustrative-only presets, not calibrated to market data.
+    # "wti": {
+    #     "label": "Crude oil (WTI, illustrative)",
+    #     "a0": 70.0, "b_trend": 0.0, "a1": 1.4, "b1": 0.0, "a2": 0.0, "b2": 0.0,
+    #     "sigma_max": 400.0, "illustrative": True,
+    # },
+    # "power": {
+    #     # cos(2*pi*(t - 0.25)) == sin(2*pi*t), which is why the amplitude
+    #     # lands on b1 rather than a1 here.
+    #     "label": "Electricity (illustrative only, OU is misspecified)",
+    #     "a0": 50.0, "b_trend": 0.0, "a1": 0.0, "b1": 17.5, "a2": 0.0, "b2": 0.0,
+    #     "sigma_max": 600.0, "illustrative": True,
+    # },
 }
 
 DEFAULT_PRESET = "henry_hub"

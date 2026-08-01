@@ -248,9 +248,6 @@
       range.value = config[key];
       num.value = config[key];
     });
-
-    var preset = presets.alpha_presets[config.alpha_preset];
-    $("illustrative-note").hidden = !preset.illustrative;
   }
 
   function recomputeDerived() {
