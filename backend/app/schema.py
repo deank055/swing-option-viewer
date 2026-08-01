@@ -39,7 +39,8 @@ K_MAX_MULTIPLE = 2.0
 # lands the baseline pair (126, 105) exactly.
 LADDER_STEP = 21
 
-# Seasonal presets, in the same six-coefficient form as swing_option/config.py:
+# Four seasonality-strength variants of the same Henry Hub calibration, in
+# the same six-coefficient form as swing_option/config.py:
 #   alpha(t) = a0 + b_trend*t
 #            + a1*cos(2*pi*t) + b1*sin(2*pi*t)
 #            + a2*cos(4*pi*t) + b2*sin(4*pi*t)
@@ -53,10 +54,18 @@ _HENRY_HUB_BASE = dict(
 )
 
 
+def _level(preset: dict[str, Any]) -> float:
+    """Mean of alpha(t) over t in [0, 1]: the harmonic terms integrate to
+    zero over a full period, leaving a0 + b_trend/2. Derived rather than
+    stored so it can't drift from the coefficients above."""
+    return preset["a0"] + preset["b_trend"] / 2.0
+
+
 def _scaled_henry_hub(scale: float) -> dict[str, float]:
-    """Henry Hub coefficients with the harmonic terms scaled, trend/level held
-    fixed. Used for the amplified/damped seasonality variants instead of
-    hardcoding their already-scaled decimals."""
+    """Henry Hub coefficients with only the four harmonic terms scaled --
+    a0 and b_trend (and so `level`) are held fixed, which is what keeps K
+    at-the-money and K_max identical across every preset and makes the
+    resulting surfaces directly comparable on seasonality strength alone."""
     return dict(
         a0=_HENRY_HUB_BASE["a0"], b_trend=_HENRY_HUB_BASE["b_trend"],
         a1=_HENRY_HUB_BASE["a1"] * scale, b1=_HENRY_HUB_BASE["b1"] * scale,
@@ -66,43 +75,32 @@ def _scaled_henry_hub(scale: float) -> dict[str, float]:
 
 ALPHA_PRESETS: dict[str, dict[str, Any]] = {
     "henry_hub": {
-        "label": "Natural gas (Henry Hub, calibrated)",
-        **_HENRY_HUB_BASE,
+        "label": "Baseline seasonality",
+        **_scaled_henry_hub(1.0),
         "sigma_max": 30.0, "illustrative": False,
     },
     "henry_hub_hi": {
-        "label": "Natural gas, amplified seasonality",
-        **_scaled_henry_hub(5.0 / 3.0),  # old amp ratio 0.30 / 0.18
+        "label": "High seasonality (2x)",
+        **_scaled_henry_hub(2.0),
         "sigma_max": 30.0, "illustrative": False,
     },
     "henry_hub_lo": {
-        "label": "Natural gas, damped seasonality",
-        **_scaled_henry_hub(0.5),  # old amp ratio 0.09 / 0.18
+        "label": "Low seasonality (0.5x)",
+        **_scaled_henry_hub(0.5),
         "sigma_max": 30.0, "illustrative": False,
     },
-    # Disabled: illustrative-only presets, not calibrated to market data.
-    # "wti": {
-    #     "label": "Crude oil (WTI, illustrative)",
-    #     "a0": 70.0, "b_trend": 0.0, "a1": 1.4, "b1": 0.0, "a2": 0.0, "b2": 0.0,
-    #     "sigma_max": 400.0, "illustrative": True,
-    # },
-    # "power": {
-    #     # cos(2*pi*(t - 0.25)) == sin(2*pi*t), which is why the amplitude
-    #     # lands on b1 rather than a1 here.
-    #     "label": "Electricity (illustrative only, OU is misspecified)",
-    #     "a0": 50.0, "b_trend": 0.0, "a1": 0.0, "b1": 17.5, "a2": 0.0, "b2": 0.0,
-    #     "sigma_max": 600.0, "illustrative": True,
-    # },
+    "henry_hub_flat": {
+        # Not a scale of 0: also drops the trend, so alpha(t) is the
+        # constant `level` and the surface shows the OU factor alone, with
+        # nothing deterministic superimposed on it.
+        "label": "No seasonality",
+        "a0": _level(_HENRY_HUB_BASE), "b_trend": 0.0,
+        "a1": 0.0, "b1": 0.0, "a2": 0.0, "b2": 0.0,
+        "sigma_max": 30.0, "illustrative": False,
+    },
 }
 
 DEFAULT_PRESET = "henry_hub"
-
-
-def _level(preset: dict[str, Any]) -> float:
-    """Mean of alpha(t) over t in [0, 1]: the harmonic terms integrate to
-    zero over a full period, leaving a0 + b_trend/2. Derived rather than
-    stored so it can't drift from the coefficients above."""
-    return preset["a0"] + preset["b_trend"] / 2.0
 
 
 # Derived from the dicts above so there is exactly one place that lists the

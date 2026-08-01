@@ -129,6 +129,6 @@ def test_openapi_renders_enums_for_dropdowns():
     schema = client.get("/openapi.json").json()
     props = schema["components"]["schemas"]["SolveRequest"]["properties"]
     assert set(props["alpha_preset"]["enum"]) == {
-        "henry_hub", "henry_hub_hi", "henry_hub_lo",
+        "henry_hub", "henry_hub_hi", "henry_hub_lo", "henry_hub_flat",
     }
     assert set(props["T"]["enum"]) == {0.5, 1.0, 2.0, 5.0}

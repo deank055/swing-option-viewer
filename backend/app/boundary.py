@@ -153,9 +153,21 @@ def compute_boundary(
     # cumulative volume already exercised, across every exercise date.
     pct_forced_volume = float(100.0 * forced_mask[reachable_C].mean())
 
+    # Guards against both operands of the correlation being degenerate: a
+    # boundary with no spread (finite.sum() <= 1) and, separately, a flat
+    # alpha (e.g. the no-seasonality preset, constant by construction).
+    # Either makes corrcoef's denominator zero, which numpy resolves to NaN
+    # with a RuntimeWarning rather than raising -- catch it here instead of
+    # letting a NaN leak into the response.
+    #
+    # np.ptp (max - min), not np.std: for a bit-identical constant array,
+    # std's internal mean-subtraction still leaves ~1e-16 rounding noise
+    # (verified empirically for the flat-alpha preset), which is enough to
+    # pass a strict `> 0` check and defeat this guard. ptp has no such
+    # cancellation and reads exactly 0 for a truly constant array.
     alpha_broadcast = np.broadcast_to(alpha_vals[:, None], boundary.shape)
     finite = np.isfinite(boundary)
-    if finite.sum() > 1 and np.std(boundary[finite]) > 0:
+    if finite.sum() > 1 and np.ptp(boundary[finite]) > 0 and np.ptp(alpha_vals) > 0:
         boundary_alpha_corr = float(
             np.corrcoef(boundary[finite], alpha_broadcast[finite])[0, 1]
         )
